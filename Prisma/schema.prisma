@@ -8,8 +8,416 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
+// ── ENUMS ──────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum ParentRelation {
+  FATHER
+  MOTHER
+  GUARDIAN
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  PROMOTED
+  TRANSFERRED
+  GRADUATED
+  WITHDRAWN
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+  HALF_DAY
+}
+
+enum ExamType {
+  UNIT_TEST
+  MID_TERM
+  FINAL
+  QUIZ
+}
+
+// ── SCHOOL (single row today, ready for multi-tenant later) ──
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  address   String?
+  phone     String?
+  email     String?
+  logoUrl   String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  academicYears AcademicYear[]
+  classes       Class[]
+  subjects      Subject[]
+  teachers      Teacher[]
+  students      Student[]
+  parents       Parent[]
+  admins        Admin[]
+
+  @@map("schools")
+}
+
+// ── AUTH / USER ────────────────────────────────────────
+
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  password    String
+  role        Role
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  admin         Admin?
+  teacher       Teacher?
+  student       Student?
+  parent        Parent?
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ── PROFILES ───────────────────────────────────────────
+
+model Admin {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  firstName String
+  lastName  String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([schoolId])
+  @@map("admins")
+}
+
+model Teacher {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId      String
+  school        School    @relation(fields: [schoolId], references: [id])
+  employeeId    String    @unique
+  firstName     String
+  lastName      String
+  gender        Gender?
+  phone         String?
+  qualification String?
+  joiningDate   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  classSubjects    ClassSubjectTeacher[]
+  markedAttendance Attendance[]          @relation("MarkedByTeacher")
+  classTeacherOf   Section[]             @relation("ClassTeacher")
+
+  @@index([schoolId])
+  @@map("teachers")
+}
+
+model Parent {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId   String
+  school     School   @relation(fields: [schoolId], references: [id])
+  firstName  String
+  lastName   String
+  phone      String?
+  occupation String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  children ParentStudent[]
+
+  @@index([schoolId])
+  @@map("parents")
+}
+
+model ParentStudent {
+  id        String         @id @default(cuid())
+  parentId  String
+  parent    Parent         @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  relation  ParentRelation
+  isPrimary Boolean        @default(false)
+
+  @@unique([parentId, studentId])
+  @@index([studentId])
+  @@map("parent_students")
+}
+
+model Student {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId      String
+  school        School    @relation(fields: [schoolId], references: [id])
+  admissionNo   String    @unique
+  firstName     String
+  lastName      String
+  dob           DateTime?
+  gender        Gender?
+  admissionDate DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  parents     ParentStudent[]
+  enrollments Enrollment[]
+  attendance  Attendance[]
+  examResults ExamResult[]
+  reportCards ReportCard[]
+
+  @@index([schoolId])
+  @@map("students")
+}
+
+// ── ACADEMIC STRUCTURE ─────────────────────────────────
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id])
+  name      String // "2025-2026"
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  terms       Term[]
+  classes     Class[]
+  enrollments Enrollment[]
+
+  @@unique([schoolId, name])
+  @@map("academic_years")
+}
+
+model Term {
+  id             String       @id @default(cuid())
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  name           String // "Term 1", "Term 2"
+  startDate      DateTime
+  endDate        DateTime
+
+  exams       Exam[]
+  reportCards ReportCard[]
+
+  @@unique([academicYearId, name])
+  @@map("terms")
+}
+
+model Class {
+  id             String       @id @default(cuid())
+  schoolId       String
+  school         School       @relation(fields: [schoolId], references: [id])
+  academicYearId String
+  academicYear   AcademicYear @relation(fields: [academicYearId], references: [id])
+  name           String // "Grade 1"
+  order          Int // for sorting
+
+  sections    Section[]
+  subjects    ClassSubject[]
+  enrollments Enrollment[]
+  exams       Exam[]
+
+  @@unique([schoolId, academicYearId, name])
+  @@map("classes")
+}
+
+model Section {
+  id             String   @id @default(cuid())
+  classId        String
+  class          Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  name           String // "A", "B"
+  classTeacherId String?
+  classTeacher   Teacher? @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+
+  enrollments Enrollment[]
+  attendance  Attendance[]
+
+  @@unique([classId, name])
+  @@map("sections")
+}
+
+model Subject {
+  id       String @id @default(cuid())
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id])
+  name     String
+  code     String?
+
+  classSubjects ClassSubject[]
+
+  @@unique([schoolId, name])
+  @@map("subjects")
+}
+
+model ClassSubject {
+  id        String  @id @default(cuid())
+  classId   String
+  class     Class   @relation(fields: [classId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  teachers     ClassSubjectTeacher[]
+  examSubjects ExamSubject[]
+
+  @@unique([classId, subjectId])
+  @@map("class_subjects")
+}
+
+model ClassSubjectTeacher {
+  id             String       @id @default(cuid())
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id], onDelete: Cascade)
+  teacherId      String
+  teacher        Teacher      @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+
+  @@unique([classSubjectId, teacherId])
+  @@map("class_subject_teachers")
+}
+
+model Enrollment {
+  id             String           @id @default(cuid())
+  studentId      String
+  student        Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  academicYearId String
+  academicYear   AcademicYear     @relation(fields: [academicYearId], references: [id])
+  classId        String
+  class          Class            @relation(fields: [classId], references: [id])
+  sectionId      String
+  section        Section          @relation(fields: [sectionId], references: [id])
+  rollNo         String?
+  status         EnrollmentStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now())
+
+  @@unique([studentId, academicYearId])
+  @@index([classId, sectionId])
+  @@map("enrollments")
+}
+
+// ── ATTENDANCE ─────────────────────────────────────────
+
+model Attendance {
+  id         String           @id @default(cuid())
+  studentId  String
+  student    Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  sectionId  String
+  section    Section          @relation(fields: [sectionId], references: [id])
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  remarks    String?
+  markedById String
+  markedBy   Teacher          @relation("MarkedByTeacher", fields: [markedById], references: [id])
+  createdAt  DateTime         @default(now())
+
+  @@unique([studentId, date])
+  @@index([sectionId, date])
+  @@map("attendance")
+}
+
+// ── EXAMS / GRADES / REPORT CARDS ──────────────────────
+
+model Exam {
+  id        String   @id @default(cuid())
+  termId    String
+  term      Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class    @relation(fields: [classId], references: [id])
+  name      String // "Mid Term Exam"
+  examType  ExamType
+  startDate DateTime
+  endDate   DateTime
+
+  examSubjects ExamSubject[]
+
+  @@map("exams")
+}
+
+model ExamSubject {
+  id             String       @id @default(cuid())
+  examId         String
+  exam           Exam         @relation(fields: [examId], references: [id], onDelete: Cascade)
+  classSubjectId String
+  classSubject   ClassSubject @relation(fields: [classSubjectId], references: [id])
+  examDate       DateTime?
+  maxMarks       Float        @default(100)
+  passMarks      Float        @default(33)
+
+  results ExamResult[]
+
+  @@unique([examId, classSubjectId])
+  @@map("exam_subjects")
+}
+
+model ExamResult {
+  id            String      @id @default(cuid())
+  examSubjectId String
+  examSubject   ExamSubject @relation(fields: [examSubjectId], references: [id], onDelete: Cascade)
+  studentId     String
+  student       Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  marksObtained Float?
+  isAbsent      Boolean     @default(false)
+  remarks       String?
+  enteredAt     DateTime    @default(now())
+
+  @@unique([examSubjectId, studentId])
+  @@index([studentId])
+  @@map("exam_results")
+}
+
+model ReportCard {
+  id            String   @id @default(cuid())
+  studentId     String
+  student       Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  termId        String
+  term          Term     @relation(fields: [termId], references: [id], onDelete: Cascade)
+  totalMarks    Float
+  obtainedMarks Float
+  percentage    Float
+  grade         String?
+  rank          Int?
+  remarks       String?
+  generatedAt   DateTime @default(now())
+
+  @@unique([studentId, termId])
+  @@map("report_cards")
 }
