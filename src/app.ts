@@ -56,15 +56,15 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 
 
 // --- API routes ---
-// import authRoutes from "./modules/auth/auth.routes";
-// import adminRoutes from "./modules/admin/admin.routes";
-// import teacherRoutes from "./modules/teacher/teacher.routes";
-// import studentRoutes from "./modules/student/student.routes";
+import authRoutes from "./modules/auth/auth.routes";
+import adminRoutes from "./modules/admin/admin.routes";
+import teacherRoutes from "./modules/teacher/teacher.routes";
+import studentRoutes from "./modules/student/student.routes";
 
-// app.use("/api/v1/auth", authRoutes);
-// app.use("/api/v1/admin", adminRoutes);
-// app.use("/api/v1/teacher", teacherRoutes);
-// app.use("/api/v1/student", studentRoutes);
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/teacher", teacherRoutes);
+app.use("/api/v1/student", studentRoutes);
 
 // --- 404 handler ---
 app.use((req: Request, _res: Response, next: NextFunction) => {

@@ -3,7 +3,7 @@ import { env } from "./config/env";
 import { prisma } from "./config/database";
 import { redisConnection } from "./config/redis";
 import { logger } from "./utils/logger";
-
+import "./jobs/email.worker"; // Initialize the email worker
 async function bootstrap() {
   try {
     // Verify DB connection before accepting traffic
@@ -24,6 +24,7 @@ async function bootstrap() {
       server.close(async () => {
         await prisma.$disconnect();
         redisConnection.disconnect();
+        // The worker will also stop when the process exits or redis disconnects.
         logger.info("Shutdown complete.");
         process.exit(0);
       });
